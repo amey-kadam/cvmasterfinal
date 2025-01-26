@@ -15,6 +15,9 @@ from edit_resume import generate_improved_content
 from ats import generate_ats_analysis
 from cover_letter import generate_cover_letter
 from werkzeug.security import generate_password_hash, check_password_hash
+import datetime
+from sqlalchemy.sql import func
+
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "mysecretkey")
@@ -81,6 +84,27 @@ class RegistrationForm(FlaskForm):
         if user:
             raise ValidationError('Email is already in use. Please choose a different one.')
 
+class ContactRequest(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), nullable=False)
+    subject = db.Column(db.String(200), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, server_default=func.now())
+    
+    user = db.relationship('User', backref=db.backref('contact_requests', lazy=True))
+
+class SupportRequest(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    payment_method = db.Column(db.String(50), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    created_at = db.Column(db.DateTime, server_default=func.now())
+    
+    user = db.relationship('User', backref=db.backref('support_requests', lazy=True))
+
 
 @app.route('/')
 def landing():
@@ -138,55 +162,7 @@ def logout():
     logout_user()
     return redirect(url_for('landing'))
 
-# @app.route('/home', methods=['GET', 'POST'])
-# @login_required
-# def home():
-#     if request.method == 'POST':
-#         if 'file' not in request.files:
-#             flash('No file part', 'error')
-#             return redirect(request.url)
-        
-#         file = request.files['file']
-#         candidate_name = request.form.get('candidate_name', current_user.username)
-        
-#         if file.filename == '' or candidate_name == '':
-#             flash('No selected file or candidate name', 'error')
-#             return redirect(request.url)
-        
-#         if file and allowed_file(file.filename):
-#             file_stream = BytesIO(file.read())
-            
-#             try:
-#                 if file.filename.lower().endswith('.pdf'):
-#                     extracted_text = get_pdf_text(file_stream)
-#                 elif file.filename.lower().endswith('.docx'):
-#                     extracted_text = get_docx_text(file_stream)
-#                 else:
-#                     flash('Invalid file type', 'error')
-#                     return redirect(request.url)
 
-#                 preprocessed_text = preprocess_text(extracted_text)
-
-#                 new_resume = Resume(
-#                     filename=file.filename, 
-#                     data=file_stream.getvalue(),
-#                     extracted_text=preprocessed_text,
-#                     candidate_name=candidate_name,
-#                     user_id=current_user.id
-#                 )
-                
-#                 db.session.add(new_resume)
-#                 db.session.commit()
-#                 flash('Resume uploaded successfully!', 'success')
-#             except Exception as e:
-#                 db.session.rollback()
-#                 flash(f'Error uploading resume: {str(e)}', 'error')
-            
-#             return redirect(url_for('home'))
-
-#     # GET request: display existing resumes for the current user
-#     resumes = Resume.query.filter_by(user_id=current_user.id).all()
-#     return render_template('home.html', resumes=resumes)
 
 @app.route('/home', methods=['GET', 'POST'])
 @login_required
@@ -463,6 +439,70 @@ def profile():
             return redirect(url_for('profile'))
     
     return render_template('profile.html')
+
+@app.route('/contact-us', methods=['GET', 'POST'])
+@login_required
+def contact_us():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        email = request.form.get('email')
+        subject = request.form.get('subject')
+        message = request.form.get('message')
+        
+        try:
+            # You might want to implement email sending logic here
+            # For now, we'll just log the contact request
+            contact = ContactRequest(
+                user_id=current_user.id,
+                name=name,
+                email=email,
+                subject=subject,
+                message=message
+            )
+            db.session.add(contact)
+            db.session.commit()
+            
+            flash('Your message has been sent successfully!', 'success')
+            return redirect(url_for('contact_us'))
+        
+        except Exception as e:
+            db.session.rollback()
+            flash('An error occurred while sending your message', 'error')
+            return redirect(url_for('contact_us'))
+    
+    return render_template('contactus.html')
+
+@app.route('/support-us', methods=['GET', 'POST'])
+@login_required
+def support_us():
+    if request.method == 'POST':
+        donation_amount = request.form.get('donation_amount')
+        custom_amount = request.form.get('custom_amount')
+        payment_method = request.form.get('payment_method')
+        
+        try:
+            # You might want to implement payment processing logic here
+            # For now, we'll just log the support request
+            amount = custom_amount if donation_amount == 'custom' else donation_amount
+            support = SupportRequest(
+                user_id=current_user.id,
+                amount=float(amount),
+                payment_method=payment_method,
+                status='pending'
+            )
+            db.session.add(support)
+            db.session.commit()
+            
+            flash('Thank you for your support! We will process your donation soon.', 'success')
+            return redirect(url_for('support_us'))
+        
+        except Exception as e:
+            db.session.rollback()
+            flash('An error occurred while processing your support request', 'error')
+            return redirect(url_for('support_us'))
+    
+    return render_template('supportus.html')
+
 
 if __name__ == '__main__':
     app.run(debug=True)
