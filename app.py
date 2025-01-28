@@ -19,7 +19,7 @@ from io import BytesIO
 from markupsafe import Markup
 import shutil
 import threading
-import time
+import time, datetime
 import os
 from sqlalchemy.sql import func
 from oauthlib.oauth2 import WebApplicationClient
@@ -139,6 +139,7 @@ class Resume(db.Model):
     feedback_response = db.Column(db.Text, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     user = db.relationship('User', backref=db.backref('resumes', lazy=True))
+
 
 
 # Registration form using WTForms
@@ -450,6 +451,9 @@ async def home():
             return redirect(url_for('home'))
 
     resumes = Resume.query.filter_by(user_id=current_user.id).all()
+
+    resumes = Resume.query.filter_by(user_id=current_user.id).order_by(Resume.id.desc()).all()
+
     return render_template('home.html', resumes=resumes)
 
 
