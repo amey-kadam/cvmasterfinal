@@ -19,7 +19,7 @@ from io import BytesIO
 from markupsafe import Markup
 import shutil
 import threading
-import time, datetime
+import time
 import os
 from sqlalchemy.sql import func
 from oauthlib.oauth2 import WebApplicationClient
@@ -141,7 +141,6 @@ class Resume(db.Model):
     user = db.relationship('User', backref=db.backref('resumes', lazy=True))
 
 
-
 # Registration form using WTForms
 class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
@@ -158,7 +157,7 @@ class RegistrationForm(FlaskForm):
 
 @app.route('/')
 def landing():
-    return render_template('landing.html')
+    return render_template('landing.html', layout_type ='navbar')
 
 
 app.config['GOOGLE_OAUTH_REDIRECT'] = os.environ.get('GOOGLE_OAUTH_REDIRECT',
@@ -276,7 +275,7 @@ def signup():
         # If form validation fails
         return render_template('signup.html', form=form)
 
-    return render_template('signup.html', form=form)
+    return render_template('signup.html', form=form, layout_type ='navbar')
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -294,7 +293,7 @@ def login():
         flash('Invalid email or password', 'error')
         return redirect(url_for('login'))
 
-    return render_template('login.html')
+    return render_template('login.html', layout_type ='navbar')
 
 
 @app.route('/logout')
@@ -306,56 +305,53 @@ def logout():
 
 def send_email(subject, recipients, body):
     try:
-        msg = Message(subject,
-                      recipients=recipients,
-                      body=body,
-                      sender=app.config['MAIL_DEFAULT_SENDER'])
-
-        # Additional logging for debugging
-        app.logger.info(f"Attempting to send email:")
-        app.logger.info(f"Subject: {subject}")
-        app.logger.info(f"Recipients: {recipients}")
-        app.logger.info(f"Sender: {app.config['MAIL_DEFAULT_SENDER']}")
-
+        msg = Message(subject, recipients=recipients, body=body, sender=app.config['MAIL_DEFAULT_SENDER'])
         mail.send(msg)
-        app.logger.info("Email sent successfully")
         return True
     except Exception as e:
-        # More detailed error logging
-        app.logger.error(f"Email sending failed: {str(e)}")
-        app.logger.error(f"SMTP Configuration:")
-        app.logger.error(f"MAIL_SERVER: {app.config['MAIL_SERVER']}")
-        app.logger.error(f"MAIL_PORT: {app.config['MAIL_PORT']}")
-        app.logger.error(f"MAIL_USE_TLS: {app.config['MAIL_USE_TLS']}")
-        app.logger.error(f"MAIL_USERNAME: {app.config['MAIL_USERNAME']}")
-
         return False
 
 
-# Modify the reset_password route to use the new send_email function
 @app.route('/reset_password', methods=['GET', 'POST'])
 def reset_password():
     if request.method == 'POST':
         email = request.form.get('email')
+
+        # Check if email is provided
+        if not email:
+            return jsonify({
+                'status': 'error',
+                'message': 'Please enter an email address'
+            })
+
+        # Check if user exists in database
         user = User.query.filter_by(email=email).first()
 
-        if user:
-            otp = ''.join(random.choices(string.digits, k=6))
-            session['otp'] = otp
-            session['email'] = email
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': 'No account found with this email address'
+            })
 
-            email_subject = "Your OTP for Password Reset"
-            email_body = f"Your OTP is: {otp}"
+        # If user exists, proceed with OTP generation and email sending
+        otp = ''.join(random.choices(string.digits, k=6))
+        session['otp'] = otp
+        session['email'] = email
 
-            if send_email(email_subject, [email], email_body):
-                flash('OTP sent to your email. Please check your inbox.', 'success')
-                return redirect(url_for('verify_otp'))
-            else:
-                flash("Error sending email. Please try again later.", 'error')
-                return redirect(url_for('reset_password'))
+        email_subject = "Your OTP for Password Reset"
+        email_body = f"Your OTP is: {otp}"
 
-        flash('Email not found', 'error')
-        return redirect(url_for('reset_password'))
+        if send_email(email_subject, [email], email_body):
+            return jsonify({
+                'status': 'success',
+                'message': 'OTP sent to your email. Please check your inbox.',
+                'redirect': url_for('verify_otp')
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Error sending email. Please try again later.'
+            })
 
     return render_template('reset_password.html')
 
@@ -376,7 +372,6 @@ def verify_otp():
 def change_password():
     try:
         if 'email' not in session:
-            app.logger.error("No email found in session")
             return jsonify({'success': False, 'message': 'No session email found'})
 
         if request.method == 'POST':
@@ -389,7 +384,7 @@ def change_password():
             user = User.query.filter_by(email=session.get('email')).first()
 
             if user:
-                user.set_password(new_password)  # Ensure set_password hashes the password
+                user.set_password(new_password)
                 db.session.commit()
                 session.pop('email', None)
                 session.pop('otp', None)
@@ -400,7 +395,6 @@ def change_password():
         return render_template('reset_password.html')
 
     except Exception as e:
-        app.logger.error(f"Error in change_password: {str(e)}")
         return jsonify({'success': False, 'message': str(e)})
 
 
@@ -450,10 +444,7 @@ async def home():
 
             return redirect(url_for('home'))
 
-    resumes = Resume.query.filter_by(user_id=current_user.id).all()
-
     resumes = Resume.query.filter_by(user_id=current_user.id).order_by(Resume.id.desc()).all()
-
     return render_template('home.html', resumes=resumes)
 
 
@@ -572,7 +563,7 @@ async def edit_resume(resume_id):
 @app.route('/ats_analysis/<int:resume_id>', methods=['GET'])
 async def ats_analysis(resume_id=None):
     if request.method == 'GET':
-        resumes = Resume.query.all()
+        resumes = Resume.query.filter_by(user_id=current_user.id).all()
         selected_resume = None
         if resume_id:
             selected_resume = Resume.query.get_or_404(resume_id)
@@ -588,15 +579,21 @@ async def ats_analysis(resume_id=None):
         analysis = await generate_ats_analysis(resume.extracted_text, job_description)
 
         safe_analysis = Markup(f"""
-        <h2 class="text-xl font-semibold mb-2">Analysis Results for {resume.candidate_name}</h2>
-        <pre class="whitespace-pre-wrap">{analysis}</pre>
-        """)
+                    <div class="space-y-6">
+                        <h2 class="text-2xl font-semibold text-black-900">Analysis Results for {resume.candidate_name}</h2>
+                        <div class="prose prose-blue max-w-none">
+                            <div class="text-black-900 leading-relaxed">
+                                {analysis}
+                            </div>
+                        </div>
+                    </div>
+                """)
         return safe_analysis
 
 
 @app.route('/cover_letter', methods=['GET'])
 def cover_letter_form():
-    resumes = Resume.query.all()
+    resumes = Resume.query.filter_by(user_id=current_user.id).all()
     return render_template('cover_letter.html', resumes=resumes)
 
 
