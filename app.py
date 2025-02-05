@@ -54,14 +54,14 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", None)
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", None)
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
-
 # Ensure default value is set
-app.config['GOOGLE_OAUTH_REDIRECT'] = os.environ.get('GOOGLE_OAUTH_REDIRECT', 'http://localhost:5000/login/google/callback')
+app.config['GOOGLE_OAUTH_REDIRECT'] = os.environ.get('GOOGLE_OAUTH_REDIRECT',
+                                                     'http://localhost:5000/login/google/callback')
 
 # Enable insecure transport in development
-if app.config['GOOGLE_OAUTH_REDIRECT'] and ('localhost' in app.config['GOOGLE_OAUTH_REDIRECT'] or '127.0.0.1' in app.config['GOOGLE_OAUTH_REDIRECT']):
+if app.config['GOOGLE_OAUTH_REDIRECT'] and (
+        'localhost' in app.config['GOOGLE_OAUTH_REDIRECT'] or '127.0.0.1' in app.config['GOOGLE_OAUTH_REDIRECT']):
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-
 
 # OAuth2 client setup
 client = WebApplicationClient(GOOGLE_CLIENT_ID)
@@ -80,6 +80,7 @@ FAISS_DIR = os.path.join(os.path.dirname(__file__), 'faiss_indices')
 
 # Set the interval to delete the directory (e.g., one hour)
 DELETE_INTERVAL_MS = 1 * 60 * 60 * 1000  # 1 hour
+
 
 # Function to delete Faiss Indices
 def deleteFAISSDirectory():
@@ -104,11 +105,6 @@ cleanup_thread.daemon = True
 cleanup_thread.start()
 
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-
 def allowed_file(filename):
     """Check if the file is allowed based on its extension."""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -126,6 +122,11 @@ class User(UserMixin, db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 
 # Define the Resume model
@@ -155,9 +156,15 @@ class RegistrationForm(FlaskForm):
             raise ValidationError('Email is already in use. Please choose a different one.')
 
 
+class LoginForm(FlaskForm):
+    email = StringField('Email', validators=[DataRequired(), Email(message='Enter a valid email')])
+    password = PasswordField('Password', validators=[DataRequired()])
+    submit = SubmitField('Login')
+
+
 @app.route('/')
 def landing():
-    return render_template('landing.html', layout_type ='navbar')
+    return render_template('landing.html', layout_type='navbar')
 
 
 app.config['GOOGLE_OAUTH_REDIRECT'] = os.environ.get('GOOGLE_OAUTH_REDIRECT',
@@ -275,25 +282,40 @@ def signup():
         # If form validation fails
         return render_template('signup.html', form=form)
 
-    return render_template('signup.html', form=form, layout_type ='navbar')
+    return render_template('signup.html', form=form, layout_type='navbar')
+
+
+@app.route('/check_email_exists', methods=['POST'])
+def check_email_exists():
+    data = request.get_json()
+    email = data.get('email')
+
+    # Check if email already exists in the database
+    existing_user = User.query.filter_by(email=email).first()
+
+    return jsonify({
+        'exists': existing_user is not None
+    })
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-
-        user = User.query.filter_by(email=email).first()
-        if user and user.check_password(password):
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(email=form.email.data).first()
+        if user and user.check_password(form.password.data):
             login_user(user)
-            flash('Login successful!', 'success')
+            # Check if it's an AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': True, 'redirect_url': url_for('home')})
             return redirect(url_for('home'))
 
-        flash('Invalid email or password', 'error')
-        return redirect(url_for('login'))
+        # Invalid credentials
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': 'Invalid email or password'})
 
-    return render_template('login.html', layout_type ='navbar')
+    # For normal GET requests, render the template
+    return render_template('login.html', form=form, layout_type='navbar')
 
 
 @app.route('/logout')
@@ -305,55 +327,44 @@ def logout():
 
 def send_email(subject, recipients, body):
     try:
-        msg = Message(subject, recipients=recipients, body=body, sender=app.config['MAIL_DEFAULT_SENDER'])
+        msg = Message(subject, recipients=recipients, body=body)
         mail.send(msg)
         return True
     except Exception as e:
+        print("Email send error:", e)
         return False
 
 
-@app.route('/reset_password', methods=['GET', 'POST'])
+@app.route('/reset_password', methods=['POST'])
 def reset_password():
-    if request.method == 'POST':
-        email = request.form.get('email')
-
-        # Check if email is provided
-        if not email:
-            return jsonify({
-                'status': 'error',
-                'message': 'Please enter an email address'
-            })
-
-        # Check if user exists in database
-        user = User.query.filter_by(email=email).first()
-
-        if not user:
-            return jsonify({
-                'status': 'error',
-                'message': 'No account found with this email address'
-            })
-
-        # If user exists, proceed with OTP generation and email sending
-        otp = ''.join(random.choices(string.digits, k=6))
-        session['otp'] = otp
-        session['email'] = email
-
-        email_subject = "Your OTP for Password Reset"
-        email_body = f"Your OTP is: {otp}"
-
-        if send_email(email_subject, [email], email_body):
-            return jsonify({
-                'status': 'success',
-                'message': 'OTP sent to your email. Please check your inbox.',
-                'redirect': url_for('verify_otp')
-            })
-        else:
-            return jsonify({
-                'status': 'error',
-                'message': 'Error sending email. Please try again later.'
-            })
-
-    return render_template('reset_password.html')
+    data = request.get_json()
+    email = data.get('email')
+    if not email:
+        return jsonify({
+            'status': 'error',
+            'message': 'Please enter an email address'
+        })
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({
+            'status': 'error',
+            'message': 'No account found with this email address'
+        })
+    otp = ''.join(random.choices(string.digits, k=6))
+    session['otp'] = otp
+    session['email'] = email
+    email_subject = "Your OTP for Password Reset"
+    email_body = f"Your OTP is: {otp}"
+    if send_email(email_subject, [email], email_body):
+        return jsonify({
+            'status': 'success',
+            'message': 'OTP sent to your email. Please check your inbox.'
+        })
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': 'Error sending email. Please try again later.'
+        })
 
 
 @app.route('/verify_otp', methods=['GET', 'POST'])
@@ -365,37 +376,34 @@ def verify_otp():
             return jsonify({'success': True})
         else:
             return jsonify({'success': False})
-    return render_template('reset_password.html')
+    return render_template('verify_otp.html')
 
 
 @app.route('/change_password', methods=['GET', 'POST'])
 def change_password():
-    try:
-        if 'email' not in session:
-            return jsonify({'success': False, 'message': 'No session email found'})
+    if 'email' not in session:
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        if request.is_json:
+            data = request.get_json()
+            new_password = data.get('new_password')
+            confirm_password = data.get('confirm_password')
+        else:
+            new_password = request.form.get('new_password')
+            confirm_password = request.form.get('confirm_password')
 
-        if request.method == 'POST':
-            if request.is_json:
-                data = request.get_json()
-                new_password = data.get('new_password')
-            else:
-                new_password = request.form.get('new_password')
-
-            user = User.query.filter_by(email=session.get('email')).first()
-
-            if user:
-                user.set_password(new_password)
-                db.session.commit()
-                session.pop('email', None)
-                session.pop('otp', None)
-                return jsonify({'success': True})
-
-            return jsonify({'success': False, 'message': 'User not found'})
-
-        return render_template('reset_password.html')
-
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
+        if new_password != confirm_password:
+            return jsonify({'success': False, 'message': 'Passwords do not match'})
+        user = User.query.filter_by(email=session.get('email')).first()
+        if user:
+            user.set_password(new_password)
+            db.session.commit()
+            session.pop('email', None)
+            session.pop('otp', None)
+            flash('Password updated successfully! Please log in.', 'success')
+            return redirect(url_for('login'))
+        return jsonify({'success': False, 'message': 'User not found'})
+    return render_template('reset_password.html', layout_type='navbar')
 
 
 @app.route('/home', methods=['GET', 'POST'])
@@ -445,7 +453,7 @@ async def home():
             return redirect(url_for('home'))
 
     resumes = Resume.query.filter_by(user_id=current_user.id).order_by(Resume.id.desc()).all()
-    return render_template('home.html', resumes=resumes)
+    return render_template('home.html', resumes=resumes, layout_type = 'authenticated')
 
 
 @app.route('/view_resume/<int:resume_id>')
@@ -493,7 +501,7 @@ async def roast_resume(resume_id):
         if action == 'regenerate':
             roast_response = await generate_roast(resume.extracted_text, resume.candidate_name)
             return render_template('roast.html', roast_response=roast_response, candidate_name=resume.candidate_name,
-                                   resume_filename=resume.filename)
+                                   resume_filename=resume.filename, layout_type = 'authenticated')
 
         elif action == 'save':
             roast_response = request.form.get('roast_response')
@@ -501,7 +509,7 @@ async def roast_resume(resume_id):
             db.session.commit()
             flash('Roast saved successfully!', 'success')  # Add a success flash message
             return render_template('roast.html', roast_response=roast_response, candidate_name=resume.candidate_name,
-                                   resume_filename=resume.filename)
+                                   resume_filename=resume.filename, layout_type = 'authenticated')
 
         elif action == 'back_to_home':
             return redirect(url_for('home'))
@@ -510,7 +518,7 @@ async def roast_resume(resume_id):
     roast_response = resume.roast_response if resume.roast_response else await generate_roast(resume.extracted_text,
                                                                                               resume.candidate_name)
     return render_template('roast.html', roast_response=roast_response, candidate_name=resume.candidate_name,
-                           resume_filename=resume.filename)
+                           resume_filename=resume.filename, layout_type = 'authenticated')
 
 
 @app.route('/feedback/<int:resume_id>', methods=['GET', 'POST'])
@@ -523,7 +531,8 @@ async def feedback_resume(resume_id):
         if action == 'regenerate':
             feedback_response = await generate_feedback(resume.extracted_text, resume.candidate_name)
             return render_template('feedback.html', feedback_response=feedback_response,
-                                   candidate_name=resume.candidate_name, resume_filename=resume.filename)
+                                   candidate_name=resume.candidate_name, resume_filename=resume.filename,
+                                   layout_type = 'authenticated')
 
         elif action == 'save':
             feedback_response = request.form.get('feedback_response')
@@ -531,7 +540,8 @@ async def feedback_resume(resume_id):
             db.session.commit()
             flash('Feedback saved successfully!', 'success')  # Add a success flash message
             return render_template('feedback.html', feedback_response=feedback_response,
-                                   candidate_name=resume.candidate_name, resume_filename=resume.filename)
+                                   candidate_name=resume.candidate_name, resume_filename=resume.filename,
+                                   layout_type = 'authenticated')
 
         elif action == 'back_to_home':
             return redirect(url_for('home'))
@@ -540,7 +550,7 @@ async def feedback_resume(resume_id):
     feedback_response = resume.feedback_response if resume.feedback_response else await generate_feedback(
         resume.extracted_text, resume.candidate_name)
     return render_template('feedback.html', feedback_response=feedback_response, candidate_name=resume.candidate_name,
-                           resume_filename=resume.filename)
+                           resume_filename=resume.filename, layout_type = 'authenticated')
 
 
 @app.route('/edit_resume/<int:resume_id>', methods=['GET', 'POST'])
@@ -548,7 +558,8 @@ async def edit_resume(resume_id):
     resume = Resume.query.get_or_404(resume_id)
 
     if request.method == 'GET':
-        return render_template('edit_resume.html', resume_id=resume_id, candidate_name=resume.candidate_name)
+        return render_template('edit_resume.html', resume_id=resume_id, candidate_name=resume.candidate_name,
+                               layout_type = 'authenticated')
 
     elif request.method == 'POST':
         content = request.json.get('content')
@@ -567,7 +578,7 @@ async def ats_analysis(resume_id=None):
         selected_resume = None
         if resume_id:
             selected_resume = Resume.query.get_or_404(resume_id)
-        return render_template('ats.html', resumes=resumes, selected_resume=selected_resume)
+        return render_template('ats.html', resumes=resumes, selected_resume=selected_resume, layout_type = 'authenticated')
     elif request.method == 'POST':
         resume_id = request.form.get('resume_id')
         job_description = request.form.get('job_description')
@@ -594,7 +605,7 @@ async def ats_analysis(resume_id=None):
 @app.route('/cover_letter', methods=['GET'])
 def cover_letter_form():
     resumes = Resume.query.filter_by(user_id=current_user.id).all()
-    return render_template('cover_letter.html', resumes=resumes)
+    return render_template('cover_letter.html', resumes=resumes, layout_type = 'authenticated')
 
 
 @app.route('/generate_cover_letter', methods=['POST'])
@@ -679,7 +690,7 @@ def profile():
             flash('An error occurred while updating profile', 'error')
             return redirect(url_for('profile'))
 
-    return render_template('profile.html')
+    return render_template('profile.html', layout_type = 'authenticated')
 
 
 @app.route('/contact-us', methods=['GET', 'POST'])
@@ -709,13 +720,19 @@ def contact_us():
 
         return redirect(url_for('contact_us'))
 
-    return render_template('contactus.html')
-
+    if current_user.is_authenticated:
+        layout_type = 'authenticated'
+    else:
+        layout_type = 'non-authenticated'
+    return render_template('contactus.html', layout_type=layout_type)
 
 @app.route('/support-us', methods=['GET', 'POST'])
 def support_us():
-
-    return render_template('supportus.html')
+    if current_user.is_authenticated:
+        layout_type = 'authenticated'
+    else:
+        layout_type = 'non-authenticated'
+    return render_template('supportus.html', layout_type=layout_type)
 
 
 if __name__ == '__main__':
