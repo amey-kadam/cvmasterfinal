@@ -1,131 +1,112 @@
 {% extends "base.html" %}
 
-{% block title %}Cover Letter Generator{% endblock %}
-
 {% block extra_css %}
 <style>
-    /* Laptop hover effects */
-    @media (min-width: 1024px) {
-        .form-container {
-            max-height: calc(100vh - 3rem);
-            overflow-y: auto;
-        }
-        .form-spacing {
-            gap: 0.75rem;
-        }
-        .input-group {
-            margin-bottom: 0.75rem;
-        }
-        .form-input:hover {
-            border-color: #93c5fd;
-        }
-        .form-input:focus {
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-        .submit-button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
-        }
+    /* Cover Letter Specific Styles */
+    #cover-letter-result {
+        font-family: 'Poppins', sans-serif;
+        line-height: 1.6;
     }
 
-            /* Cover Letter Styles */
-            #cover-letter-result {
-            font-family: 'Poppins', sans-serif;
-            line-height: 1.6;
-        }
+    #cover-letter-result p {
+        color: #111827;
+        margin-bottom: 1rem;
+        font-size: 1rem;
+    }
 
-        #cover-letter-result p {
-            color: #111827;
-            margin-bottom: 1rem;
-            font-size: 1rem;
-        }
+    #cover-letter-result b,
+    #cover-letter-result strong {
+        color: #111827;
+        font-weight: 600;
+    }
 
-        #cover-letter-result b,
-        #cover-letter-result strong {
-            color: #111827;
-            font-weight: 600;
-        }
+    #cover-letter-result i {
+        color: #111827;
+        font-style: italic;
+    }
 
-        #cover-letter-result i {
-            color: #111827;
-            font-style: italic;
-        }
+    #cover-letter-result ul,
+    #cover-letter-result ol {
+        margin: 1rem 0;
+        padding-left: 1.5rem;
+    }
 
-        #cover-letter-result ul,
-        #cover-letter-result ol {
-            margin: 1rem 0;
-            padding-left: 1.5rem;
-        }
+    #cover-letter-result ul {
+        list-style-type: disc;
+    }
 
-        #cover-letter-result ul {
-            list-style-type: disc;
-        }
+    #cover-letter-result ol {
+        list-style-type: decimal;
+    }
 
-        #cover-letter-result ol {
-            list-style-type: decimal;
-        }
+    #cover-letter-result li {
+        color: #111827;
+        margin-bottom: 0.5rem;
+        padding-left: 0.5rem;
+    }
 
-        #cover-letter-result li {
-            color: #111827;
-            margin-bottom: 0.5rem;
-            padding-left: 0.5rem;
-        }
+    #cover-letter-result ul ul,
+    #cover-letter-result ol ol,
+    #cover-letter-result ul ol,
+    #cover-letter-result ol ul {
+        margin: 0.5rem 0 0.5rem 1.5rem;
+    }
 
-        #cover-letter-result ul ul,
-        #cover-letter-result ol ol,
-        #cover-letter-result ul ol,
-        #cover-letter-result ol ul {
-            margin: 0.5rem 0 0.5rem 1.5rem;
-        }
+    #cover-letter-result br {
+        display: block;
+        margin: 0.5rem 0;
+    }
 
-        #cover-letter-result br {
-            display: block;
-            margin: 0.5rem 0;
-        }
+    /* Prose styles */
+    #cover-letter-result .prose {
+        font-size: 1rem;
+        line-height: 1.75;
+        color: #111827;
+        max-width: none;
+    }
 
-        /* Prose styles for both sections */
-        #cover-letter-result .prose {
-            font-size: 1rem;
-            line-height: 1.75;
-            color: #111827;
-            max-width: none;
-        }
+    #cover-letter-result .prose p {
+        margin-bottom: 1.25em;
+        color: #111827;
+    }
 
-        #cover-letter-result .prose p {
-            margin-bottom: 1.25em;
-            color: #111827;
-        }
+    #cover-letter-result .prose strong {
+        color: #111827;
+        font-weight: 600;
+    }
 
-        #cover-letter-result .prose strong {
-            color: #111827;
-            font-weight: 600;
-        }
+    #cover-letter-result .prose ul {
+        list-style-type: disc;
+        padding-left: 1.5em;
+        margin-top: 1.25em;
+        margin-bottom: 1.25em;
+    }
 
-        #cover-letter-result .prose ul {
-            list-style-type: disc;
-            padding-left: 1.5em;
-            margin-top: 1.25em;
-            margin-bottom: 1.25em;
-        }
+    #cover-letter-result .prose li {
+        margin-top: 0.5em;
+        margin-bottom: 0.5em;
+        color: #111827;
+    }
 
-        #cover-letter-result .prose li {
-            margin-top: 0.5em;
-            margin-bottom: 0.5em;
-            color: #111827;
-        }
+    #cover-letter-result .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+        margin-top: 1.5rem;
+    }
 
-        /* Ensuring spacing consistency */
-        #cover-letter-result .space-y-6 > :not([hidden]) ~ :not([hidden]) {
-            margin-top: 1.5rem;
-        }
+    .form-spacing {
+        margin-top: 1rem;
+    }
 
+    @media (max-width: 1023px) {
+        .form-spacing {
+            margin-top: 0.5rem;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto pt-16 lg:pt-2">
-    <div class="bg-white rounded-xl shadow-sm p-4 lg:p-6 hover-card mt-10">
+<div class="w-full">
+    <div class="bg-white rounded-xl shadow-sm p-4 lg:p-6 hover-card max-w-4xl mx-auto">
         <h2 class="text-2xl font-bold text-blue-600 mb-4 lg:mb-6 text-center">Cover Letter Generator</h2>
 
         <form hx-post="/generate_cover_letter" hx-target="#cover-letter-result" hx-indicator="#loading" class="space-y-4 form-spacing">
@@ -211,10 +192,10 @@
             </div>
         </form>
 
-<!-- Loading Indicator (Initially Hidden) -->
-<div id="loading" class="htmx-indicator flex justify-center mt-6">
-    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-</div>
+        <!-- Loading Indicator -->
+        <div id="loading" class="htmx-indicator flex justify-center mt-6">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
 
         <!-- Result Container -->
         <div id="cover-letter-result" class="mt-6 p-4 bg-gray-50 rounded-lg shadow-inner hidden">
@@ -222,10 +203,9 @@
         </div>
     </div>
 </div>
-{% endblock %}
 
-{% block scripts %}
-{{ super() }}
+<!-- HTMX Script -->
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 <script>
     // HTMX after swap handler
     document.body.addEventListener('htmx:afterSwap', function(event) {
@@ -234,26 +214,5 @@
             event.detail.target.scrollIntoView({ behavior: 'smooth' });
         }
     });
-
-    // Add error handling for HTMX requests
-    document.body.addEventListener('htmx:responseError', function(event) {
-        const errorDiv = document.getElementById('cover-letter-result');
-        errorDiv.classList.remove('hidden');
-        errorDiv.innerHTML = `
-            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                <strong>Error:</strong> ${event.detail.error}
-            </div>
-        `;
-    });
-
-    // Copy to clipboard function
-    function copyToClipboard(text) {
-        navigator.clipboard.writeText(text).then(() => {
-            alert('Cover letter copied to clipboard!');
-        }).catch(err => {
-            console.error('Failed to copy text: ', err);
-        });
-    }
 </script>
-
 {% endblock %}
